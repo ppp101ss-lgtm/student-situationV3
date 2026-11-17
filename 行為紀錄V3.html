@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生行為表現紀錄系統 - 我的七個讚</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #16a34a;
+            --bg: #f8fafc;
+            --border: #cbd5e1;
+            --text: #1e293b;
+        }
+        * { box-sizing: border-box; font-family: "Microsoft JhengHei", "PingFang TC", sans-serif; }
+        body { background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        
+        /* 頂部控制列 */
+        .control-panel { background: #eff6ff; padding: 15px; border-radius: 8px; border: 1px solid #bfdbfe; margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 15px; align-items: center; justify-content: space-between; }
+        .control-group { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        label { font-weight: bold; font-size: 14px; }
+        select, input[type="date"], input[type="text"], textarea { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+        
+        button { padding: 8px 14px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: #15803d; }
+        .btn-outline { background: white; border: 1px solid var(--border); color: var(--text); }
+        .btn-outline:hover { background: #f1f5f9; }
+        .btn-danger { background: #ef4444; color: white; }
+
+        /* 名單匯入彈窗 */
+        #importModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 10px; width: 90%; max-width: 500px; }
+        .modal-content textarea { width: 100%; height: 180px; margin: 10px 0; }
+
+        /* 紀錄單表頭 */
+        .sheet-header { text-align: center; margin-bottom: 15px; }
+        .sheet-header h1 { margin: 0 0 10px 0; font-size: 24px; color: #0f172a; }
+        .student-info { display: flex; justify-content: space-between; background: #f1f5f9; padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+
+        /* 表格樣式 */
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white; }
+        th, td { border: 1px solid #64748b; padding: 8px 4px; text-align: center; font-size: 14px; }
+        th { background-color: #e2e8f0; font-weight: bold; }
+        .item-col { text-align: left; padding-left: 12px; width: 32%; font-weight: 500; }
+        .sub-header { background-color: #f8fafc; font-size: 12px; }
+        
+        /* 加大核取方塊方便點擊 */
+        input[type="checkbox"] { width: 20px; height: 20px; cursor: pointer; accent-color: var(--primary); vertical-align: middle; }
+        .item-title-cb { margin-right: 8px; }
+
+        /* 底部評語與統計區 */
+        .footer-box { border: 2px solid #94a3b8; border-radius: 8px; padding: 15px; background: #fafafa; }
+        .stats-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed #cbd5e1; font-size: 16px; font-weight: bold; }
+        .badge-pass { background: #dcfce7; color: #166534; padding: 4px 12px; border-radius: 20px; border: 1px solid #86efac; }
+        .badge-fail { background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 20px; border: 1px solid #fca5a5; }
+        .comment-area { width: 100%; height: 70px; margin-top: 8px; font-size: 15px; }
+
+        .status-toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; color: white; padding: 10px 20px; border-radius: 8px; opacity: 0; transition: 0.3s; pointer-events: none; }
+
+        /* 列印專用樣式 */
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; max-width: 100%; padding: 0; }
+            .control-panel, .no-print { display: none !important; }
+            table { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- 控制面板 -->
+    <div class="control-panel no-print">
+        <div class="control-group">
+            <button class="btn-outline" onclick="openImportModal()">📋 上傳/編輯學生名單</button>
+            <label>選擇學生：</label>
+            <select id="studentSelect" onchange="loadCurrentRecord()"></select>
+        </div>
+
+        <div class="control-group">
+            <label>日期區間：</label>
+            <input type="date" id="startDate" onchange="onDateChange()">
+            <span>至</span>
+            <input type="date" id="endDate" onchange="onDateChange()">
+        </div>
+
+        <div class="control-group">
+            <button class="btn-success" onclick="exportToCSV()">📥 下載 Excel (CSV)</button>
+            <button class="btn-primary" onclick="window.print()">🖨️ 列印 / 存成 PDF</button>
+            <button class="btn-outline" onclick="backupJSON()">💾 備份全部資料</button>
+            <button class="btn-outline" onclick="document.getElementById('restoreFile').click()">📂 還原資料</button>
+            <input type="file" id="restoreFile" style="display:none" accept=".json" onchange="restoreJSON(event)">
+        </div>
+    </div>
+
+    <!-- 紀錄表主體 -->
+    <div class="sheet-header">
+        <h1>我的七個讚（行為表現紀錄單）</h1>
+        <div style="font-size: 13px; color: #64748b;">有做到老師會打勾</div>
+    </div>
+
+    <div class="student-info">
+        <div>姓名：<span id="displayName">（請先匯入名單）</span></div>
+        <div>座號：<span id="displaySeat">--</span></div>
+        <div>日期區間：<span id="displayDateRange">____月____日 到 ____月____日</span></div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th rowspan="2" class="item-col">行為表現檢核項目</th>
+                <th colspan="3">星一</th>
+                <th colspan="3">星二</th>
+                <th colspan="3">星三</th>
+                <th colspan="3">星四</th>
+                <th colspan="4">星五</th>
+            </tr>
+            <tr class="sub-header">
+                <!-- 星一到星四各3格，星五4格，共16格以對齊「上課講話前舉手」 -->
+                <th colspan="3">表現</th>
+                <th colspan="3">表現</th>
+                <th colspan="3">表現</th>
+                <th colspan="3">表現</th>
+                <th colspan="4">表現</th>
+            </tr>
+        </thead>
+        <tbody id="recordTableBody">
+            <!-- 由 JavaScript 動態生成 -->
+        </tbody>
+    </table>
+
+    <!-- 底部評語與達標計算 -->
+    <div class="footer-box">
+        <div class="stats-bar">
+            <div>目前勾選總數：<span id="checkedCount">0</span> / <span id="totalCount">51</span> 格（達成率：<span id="passRate">0%</span>）</div>
+            <div id="passStatus" class="badge-fail">尚未達標 2/3</div>
+        </div>
+        <div>
+            <strong>有做到滿 2/3 評語部分：</strong>（老師就會幫你寫聯絡簿表揚你表現非常好）
+            <textarea id="teacherComment" class="comment-area" placeholder="在此輸入給學生的個別評語或聯絡簿表揚內容..." oninput="autoSave()"></textarea>
+        </div>
+    </div>
+</div>
+
+<!-- 匯入名單彈窗 -->
+<div id="importModal">
+    <div class="modal-content">
+        <h3>📋 上傳 / 編輯學生名單</h3>
+        <p style="font-size: 13px; color: #475569;">請輸入學生座號與姓名，每行一位（可用空白、逗號或 Tab 分隔，可直接從 Excel 複製貼上）：<br>範例：<br>1 王小明<br>2 陳小華</p>
+        <textarea id="studentListInput" placeholder="1 王小明&#10;2 陳小華&#10;3 林大同"></textarea>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button class="btn-outline" onclick="closeImportModal()">取消</button>
+            <button class="btn-primary" onclick="saveStudentList()">儲存名單</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="status-toast">✅ 已自動儲存於本機</div>
+
+<script>
+    // 定義8大檢核項目結構（完全還原 Word 檔案）
+    const ITEMS = [
+        { id: 'hw', title: '每天都有按時交作業連續五天', hasTitleBox: false, type: 'daily' },
+        { id: 'hand', title: '上課講話前舉手', hasTitleBox: false, type: 'periods' },
+        { id: 'morning', title: '早自習時做自己的事 不跟同學玩/說話連續五天', hasTitleBox: true, type: 'daily' },
+        { id: 'clean', title: '確實進行打掃工作', hasTitleBox: true, type: 'daily' },
+        { id: 'nap', title: '午休時做自己的事 不跟同學玩/說話連續五天', hasTitleBox: true, type: 'daily' },
+        { id: 'line', title: '前往科任課教室 鈴響就排隊連續五天', hasTitleBox: true, type: 'daily' },
+        { id: 'dismiss', title: '放學時排路隊不掉隊 不吵鬧', hasTitleBox: true, type: 'daily' },
+        { id: 'rules', title: '不在教室玩球 丟東西 奔跑 說傻B 說髒話比手勢', hasTitleBox: false, type: 'daily' }
+    ];
+
+    const STORAGE_STUDENTS = 'behavior_app_students_v1';
+    const STORAGE_RECORDS = 'behavior_app_records_v1';
+
+    let students = [];
+    let allRecords = {};
+
+    // 初始化
+    window.onload = function() {
+        loadStudents();
+        const savedRecords = localStorage.getItem(STORAGE_RECORDS);
+        if (savedRecords) {
+            allRecords = JSON.parse(savedRecords);
+        }
+        setDefaultDates();
+        renderTable();
+        loadCurrentRecord();
+    };
+
+    // 設定預設為本週一到週五
+    function setDefaultDates() {
+        const today = new Date();
+        const day = today.getDay() || 7;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - day + 1);
+        const friday = new Date(monday);
+        friday.setDate(monday.getDate() + 4);
+
+        document.getElementById('startDate').value = monday.toISOString().split('T')[0];
+        document.getElementById('endDate').value = friday.toISOString().split('T')[0];
+        updateDateDisplay();
+    }
+
+    function onDateChange() {
+        updateDateDisplay();
+        loadCurrentRecord();
+    }
+
+    function updateDateDisplay() {
+        const s = document.getElementById('startDate').value;
+        const e = document.getElementById('endDate').value;
+        if (s && e) {
+            const sParts = s.split('-');
+            const eParts = e.split('-');
+            document.getElementById('displayDateRange').textContent = 
+                `${parseInt(sParts[1])}月${parseInt(sParts[2])}日 到 ${parseInt(eParts[1])}月${parseInt(eParts[2])}日`;
+        }
+    }
+
+    // 載入學生名單
+    function loadStudents() {
+        const saved = localStorage.getItem(STORAGE_STUDENTS);
+        if (saved) {
+            students = JSON.parse(saved);
+        } else {
+            // 預設範例名單
+            students = [
+                { seat: '1', name: '範例學生一' },
+                { seat: '2', name: '範例學生二' }
+            ];
+        }
+        updateStudentDropdown();
+    }
+
+    function updateStudentDropdown() {
+        const select = document.getElementById('studentSelect');
+        select.innerHTML = '';
+        students.forEach((stu, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.textContent = `${stu.seat}號 - ${stu.name}`;
+            select.appendChild(opt);
+        });
+    }
+
+    // 渲染表格
+    function renderTable() {
+        const tbody = document.getElementById('recordTableBody');
+        tbody.innerHTML = '';
+
+        ITEMS.forEach(item => {
+            const tr = document.createElement('tr');
+            
+            // 項目名稱欄
+            const tdTitle = document.createElement('td');
+            tdTitle.className = 'item-col';
+            if (item.hasTitleBox) {
+                tdTitle.innerHTML = `<input type="checkbox" class="item-title-cb record-cb" data-key="${item.id}_title" onchange="autoSave()">${item.title}`;
+            } else {
+                tdTitle.textContent = item.title;
+            }
+            tr.appendChild(tdTitle);
+
+            // 內容格子
+            if (item.type === 'daily') {
+                // 星一到星四各佔3欄，星五佔4欄
+                const spans = [3, 3, 3, 3, 4];
+                spans.forEach((span, dayIdx) => {
+                    const td = document.createElement('td');
+                    td.colSpan = span;
+                    td.innerHTML = `<input type="checkbox" class="record-cb" data-key="${item.id}_d${dayIdx}" onchange="autoSave()">`;
+                    tr.appendChild(td);
+                });
+            } else if (item.type === 'periods') {
+                // 上課講話前舉手：星一~四各3節，星五4節（共16格）
+                const dayPeriods = [3, 3, 3, 3, 4];
+                dayPeriods.forEach((pCount, dayIdx) => {
+                    for (let p = 1; p <= pCount; p++) {
+                        const td = document.createElement('td');
+                        td.style.padding = '4px 2px';
+                        td.innerHTML = `<div style="font-size:11px; color:#64748b;">節${p}</div><input type="checkbox" class="record-cb" data-key="${item.id}_d${dayIdx}_p${p}" onchange="autoSave()">`;
+                        tr.appendChild(td);
+                    }
+                });
+            }
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 取得目前儲存鍵值 (學生座號姓名 + 日期區間)
+    function getCurrentRecordKey() {
+        const idx = document.getElementById('studentSelect').value;
+        const stu = students[idx];
+        const s = document.getElementById('startDate').value;
+        const e = document.getElementById('endDate').value;
+        if (!stu) return null;
+        return `${stu.seat}_${stu.name}_${s}_${e}`;
+    }
+
+    // 載入該生該週紀錄
+    function loadCurrentRecord() {
+        const idx = document.getElementById('studentSelect').value;
+        const stu = students[idx];
+        if (stu) {
+            document.getElementById('displayName').textContent = stu.name;
+            document.getElementById('displaySeat').textContent = stu.seat;
+        }
+
+        const key = getCurrentRecordKey();
+        const data = allRecords[key] || { checks: {}, comment: '' };
+
+        document.querySelectorAll('.record-cb').forEach(cb => {
+            cb.checked = !!data.checks[cb.dataset.key];
+        });
+        document.getElementById('teacherComment').value = data.comment || '';
+        calculateStats();
+    }
+
+    // 自動儲存與統計
+    function autoSave() {
+        const key = getCurrentRecordKey();
+        if (!key) return;
+
+        const checks = {};
+        document.querySelectorAll('.record-cb').forEach(cb => {
+            if (cb.checked) checks[cb.dataset.key] = true;
+        });
+
+        allRecords[key] = {
+            checks: checks,
+            comment: document.getElementById('teacherComment').value
+        };
+
+        localStorage.setItem(STORAGE_RECORDS, JSON.stringify(allRecords));
+        calculateStats();
+        showToast();
+    }
+
+    // 計算 2/3 達標率
+    function calculateStats() {
+        const allBoxes = document.querySelectorAll('.record-cb');
+        const total = allBoxes.length;
+        let checked = 0;
+        allBoxes.forEach(cb => { if (cb.checked) checked++; });
+
+        const rate = total > 0 ? Math.round((checked / total) * 100) : 0;
+        const isPass = checked >= Math.ceil(total * (2 / 3));
+
+        document.getElementById('checkedCount').textContent = checked;
+        document.getElementById('totalCount').textContent = total;
+        document.getElementById('passRate').textContent = `${rate}%`;
+
+        const statusEl = document.getElementById('passStatus');
+        if (isPass) {
+            statusEl.textContent = '🎉 已達標 2/3（可寫聯絡簿表揚！）';
+            statusEl.className = 'badge-pass';
+        } else {
+            statusEl.textContent = `尚未達標 2/3（還差 ${Math.ceil(total * (2 / 3)) - checked} 格）`;
+            statusEl.className = 'badge-fail';
+        }
+    }
+
+    function showToast() {
+        const toast = document.getElementById('toast');
+        toast.style.opacity = '1';
+        setTimeout(() => { toast.style.opacity = '0'; }, 1500);
+    }
+
+    // 匯入名單功能
+    function openImportModal() {
+        const text = students.map(s => `${s.seat} ${s.name}`).join('\n');
+        document.getElementById('studentListInput').value = text;
+        document.getElementById('importModal').style.display = 'flex';
+    }
+
+    function closeImportModal() {
+        document.getElementById('importModal').style.display = 'none';
+    }
+
+    function saveStudentList() {
+        const raw = document.getElementById('studentListInput').value.trim();
+        if (!raw) return alert('請輸入至少一位學生！');
+
+        const lines = raw.split('\n');
+        const newStudents = [];
+        lines.forEach(line => {
+            const parts = line.trim().split(/[\s,\t]+/);
+            if (parts.length >= 2) {
+                newStudents.push({ seat: parts[0], name: parts.slice(1).join(' ') });
+            } else if (parts.length === 1 && parts[0]) {
+                newStudents.push({ seat: (newStudents.length + 1).toString(), name: parts[0] });
+            }
+        });
+
+        students = newStudents;
+        localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(students));
+        updateStudentDropdown();
+        loadCurrentRecord();
+        closeImportModal();
+        showToast();
+    }
+
+    // 下載目前日期區間全班 CSV (Excel 可直接開啟)
+    function exportToCSV() {
+        const s = document.getElementById('startDate').value;
+        const e = document.getElementById('endDate').value;
+        const totalBoxes = document.querySelectorAll('.record-cb').length;
+
+        let csv = '\uFEFF'; // UTF-8 BOM 防止 Excel 亂碼
+        csv += `日期區間,${s} 至 ${e}\n`;
+        csv += `座號,姓名,總勾選數,總格數,達成率,是否達標(2/3),老師評語\n`;
+
+        students.forEach(stu => {
+            const key = `${stu.seat}_${stu.name}_${s}_${e}`;
+            const data = allRecords[key] || { checks: {}, comment: '' };
+            const count = Object.keys(data.checks).length;
+            const rate = Math.round((count / totalBoxes) * 100);
+            const pass = count >= Math.ceil(totalBoxes * (2 / 3)) ? '是' : '否';
+            const cleanComment = `"${(data.comment || '').replace(/"/g, '""')}"`;
+
+            csv += `${stu.seat},${stu.name},${count},${totalBoxes},${rate}%,${pass},${cleanComment}\n`;
+        });
+
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `行為表現紀錄_${s}_至_${e}.csv`;
+        link.click();
+    }
+
+    // 備份與還原完整 JSON 資料庫
+    function backupJSON() {
+        const backupData = { students, allRecords };
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `行為表現系統完整備份_${new Date().toISOString().slice(0,10)}.json`;
+        link.click();
+    }
+
+    function restoreJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (data.students && data.allRecords) {
+                    students = data.students;
+                    allRecords = data.allRecords;
+                    localStorage.setItem(STORAGE_STUDENTS, JSON.stringify(students));
+                    localStorage.setItem(STORAGE_RECORDS, JSON.stringify(allRecords));
+                    updateStudentDropdown();
+                    loadCurrentRecord();
+                    alert('✅ 資料還原成功！');
+                }
+            } catch (err) {
+                alert('❌ 檔案格式錯誤，無法還原。');
+            }
+        };
+        reader.readAsText(file);
+    }
+</script>
+
+</body>
+</html>
